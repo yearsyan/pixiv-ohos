@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Pixiv 鸿蒙原生客户端"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Pixiv 鸿蒙原生客户端"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Pixiv"
+    }
+  ]
+}

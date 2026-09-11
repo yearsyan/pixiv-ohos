@@ -1,0 +1,55 @@
+# Dependencies and generated build output (including module-local directories)
+node_modules/
+oh_modules/
+build/
+.hvigor/
+.cxx/
+.test/
+.preview/
+.appanalyzer/
+coverage/
+
+# Local IDE and SDK configuration
+.idea/
+local.properties
+/.clangd/
+/.clang-format
+/.clang-tidy
+
+# DevEco Studio writes signing credentials into this root configuration.
+# Commit build-profile.example.json5 instead; entry/build-profile.json5 is shared.
+/build-profile.json5
+/signing/
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.key
+*.pem
+*.cer
+*.crt
+*.csr
+*.p7b
+*.p7s
+
+# Packaged applications and binary dependencies
+*.hap
+*.hsp
+*.har
+*.app
+*.apk
+*.aab
+
+# Local secrets, logs and script caches
+.env
+.env.*
+!.env.example
+*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# macOS metadata
+.DS_Store
+._*
