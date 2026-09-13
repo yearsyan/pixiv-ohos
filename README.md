@@ -41,6 +41,21 @@ HDC=/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/toolchains/
 "$HDC" -t <鸿蒙设备ID> shell aa start -a EntryAbility -b dev.app.pixivohos
 ```
 
+## GitHub Actions 发布构建
+
+推送以 `v` 开头的版本 tag（例如 `v1.0.0`）会触发 `.github/workflows/release-hap.yml`，以 `release` 模式构建未签名 HAP：
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+打 tag 前需先提交工作流，确保 tag 指向包含工作流的提交。也可以在 GitHub 的 **Actions → Build unsigned release HAP → Run workflow** 手动触发构建。
+
+工作流使用 Ubuntu 24.04，通过 [ErBWs/setup-ohos](https://github.com/ErBWs/setup-ohos) 安装固定版本 `26.0.0.821` 的 HarmonyOS Command Line Tools（含 SDK 26），从 `build-profile.example.json5` 创建无签名配置并安装 OHPM 依赖，无需配置签名 Secrets。
+
+构建完成后，在对应 Actions 运行页面的 **Artifacts** 下载 `pixiv-ohos-unsigned-<运行编号>`，其中包含 `entry-default-unsigned.hap`，保留 30 天。未签名 HAP 需要自行签名后才能安装到真机；此流程仅上传 Actions 构建产物，不自动创建 GitHub Release。
+
 ## 验证
 
 ```sh

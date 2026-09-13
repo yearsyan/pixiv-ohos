@@ -1,0 +1,66 @@
+name: Build unsigned release HAP
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libgl1
+
+      - name: Set up HarmonyOS tools
+        uses: ErBWs/setup-ohos@4dbb63025116eb6165ceac58a4bf47cbdc5ac721 # v2
+        with:
+          version: '26.0.0.821'
+          cache: true
+
+      - name: Prepare unsigned build
+        run: |
+          cp build-profile.example.json5 build-profile.json5
+          echo "DEVECO_SDK_HOME=$HOS_SDK_HOME" >> "$GITHUB_ENV"
+
+      - name: Install OHPM dependencies
+        run: ohpm install --all
+
+      - name: Build release HAP
+        run: |
+          hvigorw --mode module \
+            -p product=default \
+            -p module=entry@default \
+            -p buildMode=release \
+            assembleHap --no-daemon
+
+      - name: Upload unsigned HAP
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pixiv-ohos-unsigned-${{ github.run_number }}
+          path: entry/build/default/outputs/default/entry-default-unsigned.hap
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
