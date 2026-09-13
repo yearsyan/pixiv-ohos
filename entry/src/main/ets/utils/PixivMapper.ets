@@ -63,7 +63,11 @@ export function compactCount(value: number): string {
 }
 
 export function isApiUrl(url: string): boolean {
-  return /^https:\/\/app-api\.pixiv\.net\/v[12]\/[a-z0-9/_.?=&%+\[\],-]+$/i.test(url);
+  return /^https:\/\/app-api\.pixiv\.net\/v[123]\/[a-z0-9/_.?=&%+\[\],-]+$/i.test(url);
+}
+
+export function isNovelWebviewUrl(url: string): boolean {
+  return /^https:\/\/app-api\.pixiv\.net\/webview\/v2\/novel\?id=\d+&viewer_version=20221031_ai$/.test(url);
 }
 
 export function isImageUrl(url: string): boolean {

@@ -15,6 +15,16 @@ export function errorMessage(error: Error): string {
 
 export async function requestJson<T>(url: string, headers: Record<string, string>,
   method: http.RequestMethod = http.RequestMethod.GET, body: string = ''): Promise<T> {
+  return parseJson<T>(await requestText(url, headers, method, body));
+}
+
+export function parseJson<T>(text: string): T {
+  try { return JSON.parse(text) as T; }
+  catch (_) { throw new PixivError('Pixiv 返回了无法识别的内容，请稍后重试。'); }
+}
+
+export async function requestText(url: string, headers: Record<string, string>,
+  method: http.RequestMethod = http.RequestMethod.GET, body: string = ''): Promise<string> {
   const request = http.createHttp();
   try {
     const response = await request.request(url, {
@@ -30,11 +40,7 @@ export async function requestJson<T>(url: string, headers: Record<string, string
       if (code === 429) { throw new PixivError('请求有些频繁，请稍等片刻再试。', code); }
       throw new PixivError('Pixiv 服务暂时不可用（' + code.toString() + '）。', code);
     }
-    try {
-      return JSON.parse(response.result as string) as T;
-    } catch (_) {
-      throw new PixivError('Pixiv 返回了无法识别的内容，请稍后重试。');
-    }
+    return response.result as string;
   } catch (error) {
     if (error instanceof PixivError) { throw error; }
     throw new PixivError('连接 Pixiv 失败，请确认当前网络可以访问 pixiv.net。');

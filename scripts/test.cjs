@@ -57,6 +57,7 @@ const originalLoad = Module._load;
 Module._load = function(id, parent, main) { return mocks[id] || originalLoad.apply(this, arguments); };
 const load = name => require(path.join(root, 'entry/src/main/ets', name));
 const mapper = load('utils/PixivMapper.ets');
+const reading = load('utils/ReadingMapper.ets');
 const models = load('models/PixivModels.ets');
 const { authService: auth } = load('services/AuthService.ets');
 const { pixivApi: api } = load('services/PixivApi.ets');
@@ -217,5 +218,128 @@ test('Pixiv protocol and local state', async t => {
     assert.equal(library.history.length, 150); assert.equal(library.history[0].id, 154);
     await library.recordSearch('landscape'); await library.recordSearch('sky'); await library.recordSearch('landscape');
     assert.deepEqual(library.searches, ['landscape', 'sky']);
+  });
+  await t.test('novel pagination preserves text, chapters, ruby and Unicode boundaries', () => {
+    const pages = reading.readerPages('[chapter:序章]\n第一段\n[[rb:漢字>かんじ]][newpage]<literal text>\n[pixivimage:123]');
+    assert.equal(pages.length, 2);
+    assert.equal(pages[0].blocks[0].kind, 'chapter');
+    assert.equal(pages[0].blocks[0].text, '序章');
+    assert.equal(pages[0].blocks[2].text, '漢字（かんじ）');
+    assert.equal(pages[1].blocks[0].text, '<literal text>');
+    assert.equal(pages[1].blocks[1].kind, 'image');
+    const text = 'a'.repeat(1999) + '🌸' + 'b'.repeat(28000);
+    const chunks = reading.readerPages(text).flatMap(page => page.blocks.map(block => block.text));
+    assert.equal(chunks.join(''), text);
+    assert.ok(chunks.every(chunk => chunk.isWellFormed()));
+    assert.ok(reading.readerPages(text).every(page => page.blocks.length <= 6));
+    assert.deepEqual(reading.readerPages(' \n[newpage]\n'), []);
+  });
+  await t.test('embedded novel JSON handles quoted braces without executing scripts', () => {
+    const novel = { id: '51', text: 'Text with } and "quotes" {\n[newpage]End', images: {} };
+    const html = '<script>const data = { novel: ' + JSON.stringify(novel) + ', isOwnWork: false }; throw Error("must not execute");</script>';
+    assert.deepEqual(reading.parseNovelWebview(html, 51), novel);
+    assert.throws(() => reading.parseNovelWebview(html, 52), /小说正文/);
+    assert.throws(() => reading.parseNovelWebview('novel: {"id":51,"text":', 51), /小说正文/);
+    assert.throws(() => reading.parseNovelWebview('novel: {id:51,text:"not JSON"}', 51), /小说正文/);
+  });
+  await t.test('novel images and comments never trust foreign image hosts', () => {
+    const images = reading.novelImages({ '10': { urls: { original: 'https://i.pximg.net/novel.png' } },
+      '11': { urls: { original: 'https://i.pximg.net.evil.test/image' } } },
+      { '12-1': { illust: { images: { original: 'https://i.pximg.net/illust.png' } } }, '13': null });
+    assert.deepEqual(Object.keys(images), ['uploadedimage:10', 'pixivimage:12-1']);
+    assert.equal(reading.readerPages('[uploadedimage:10]', images)[0].blocks[0].imageUrl, images['uploadedimage:10']);
+    assert.equal(reading.readerPages('[uploadedimage:10]', { 'uploadedimage:10': 'file:///secret' })[0].blocks[0].imageUrl, '');
+    const comment = reading.appComment({ id: 1, comment: '', date: '', stamp: { stamp_url: 'https://evil.test/a' } });
+    assert.equal(comment.stampUrl, ''); assert.equal(comment.userName, '已注销用户');
+    const stamp = reading.webComment({ id: '2', stampId: '303', comment: '', isDeletedUser: true });
+    assert.equal(stamp.stampUrl, 'https://s.pximg.net/common/images/stamp/generated-stamps/303_s.jpg');
+    assert.equal(stamp.userName, '已注销用户');
+    assert.equal(reading.uniqueComments([comment, comment, { ...comment, id: 0 }]).length, 1);
+  });
+  await t.test('guest novel search uses the server lastPage even when a page is filtered empty', async () => {
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: false,
+      body: { novel: { data: [], total: 201, lastPage: 7 } } }) });
+    const result = await api.novels('discover', '风景 & sea', 'date_asc', '2');
+    assert.equal(result.next, '3');
+    assert.match(requests.at(-1).url, /ajax\/search\/novels\/%E9%A3%8E%E6%99%AF%20%26%20sea/);
+    assert.match(requests.at(-1).url, /order=date&mode=safe&p=2/);
+    assert.equal(requests.at(-1).options.header.Authorization, undefined);
+    await assert.rejects(() => api.novels('discover', '', '', 'https://evil.test/page'), /页码/);
+  });
+  await t.test('guest novel ranking filters restricted entries without requiring a cover', async () => {
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: false, body: { display_a: {
+      rank_a: [{ id: '1', title: 'A', x_restrict: '0', character_count: '1000' },
+        { id: '2', title: 'B', x_restrict: '1' }, { id: '1', title: 'Duplicate', x_restrict: '0' }], next: 2 } } }) });
+    const page = await api.novels('week');
+    assert.deepEqual(page.items.map(novel => novel.id), [1]);
+    assert.equal(page.items[0].textCount, 1000); assert.equal(page.next, '2');
+    assert.match(requests.at(-1).url, /mode=weekly&content=novel&p=1/);
+  });
+  await t.test('guest novel content returns only accessible series neighbors', async () => {
+    const body = { id: '51', title: 'Synthetic novel', userId: '1', userName: 'Author', description: '', xRestrict: 0,
+      tags: { tags: [] }, content: 'Chapter one[newpage]Chapter two', seriesNavData: {
+        title: 'Series', prev: { id: '50', available: true }, next: { id: '52', available: false } } };
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: false, body }) });
+    const result = await api.novelContent(51);
+    assert.equal(result.previousId, 50); assert.equal(result.nextId, 0);
+    assert.equal(result.novel.seriesTitle, 'Series');
+    body.xRestrict = 1;
+    await assert.rejects(() => api.novelContent(51), /当前浏览模式/);
+    body.xRestrict = 0; delete body.content;
+    await assert.rejects(() => api.novelContent(51), /登录/);
+  });
+  await t.test('guest roots use offset and replies use page without sending credentials', async () => {
+    const comment = { id: '100', comment: '<literal>', commentDate: '2026-09-13', userName: 'Reader', hasReplies: true };
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: false,
+      body: { comments: [comment], hasNext: true } }) });
+    let page = await api.comments(51, 'novel');
+    assert.equal(page.next, '1'); assert.equal(page.items[0].text, '<literal>');
+    assert.match(requests.at(-1).url, /novels\/comments\/roots\?novel_id=51&offset=0&limit=20/);
+    page = await api.comments(51, 'novel', 100);
+    assert.equal(page.next, '2');
+    assert.match(requests.at(-1).url, /novels\/comments\/replies\?comment_id=100&page=1/);
+    page = await api.comments(51, 'illust', 100, page.next);
+    assert.match(requests.at(-1).url, /illusts\/comments\/replies\?comment_id=100&page=2/);
+    assert.equal(requests.at(-1).options.header.Authorization, undefined);
+    await assert.rejects(() => api.comments(1, 'illust', 0, '-1'), /页码/);
+    await assert.rejects(() => api.comments(1, '../evil'), /评论地址/);
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: true, message: '', body: [] }) });
+    await assert.rejects(() => api.comments(51, 'novel', 100), /登录后重试/);
+  });
+  await t.test('authenticated novel reader refreshes once and decodes the webview payload', async () => {
+    handler = async () => tokenResponse();
+    await auth.loginWithRefreshToken('synthetic-refresh-token');
+    let webviewCalls = 0;
+    const novel = { id: 51, title: 'Synthetic', caption: '', user: { id: 1, name: 'Author' }, tags: [], x_restrict: 0,
+      text_length: 12, image_urls: {} };
+    handler = async url => {
+      if (url.includes('auth/token')) return tokenResponse();
+      if (url.includes('/v2/novel/detail')) return { responseCode: 200, result: JSON.stringify({ novel }) };
+      webviewCalls++;
+      return webviewCalls === 1 ? { responseCode: 401, result: '' } : { responseCode: 200,
+        result: 'novel: ' + JSON.stringify({ id: '51', text: 'Novel text', seriesNavigation: {
+          prevNovel: { id: 50, viewable: true }, nextNovel: { id: 52, viewable: false } } }) + ', isOwnWork: false' };
+    };
+    const result = await api.novelContent(51);
+    assert.equal(webviewCalls, 2); assert.equal(result.text, 'Novel text');
+    assert.equal(result.previousId, 50); assert.equal(result.nextId, 0);
+    assert.match(requests.at(-1).url, /webview\/v2\/novel\?id=51&viewer_version=20221031_ai$/);
+    assert.equal(requests.at(-1).options.header.Authorization, 'Bearer synthetic-access');
+  });
+  await t.test('authenticated comment endpoints and novel cursors keep bearer tokens on the API origin', async () => {
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ comments: [
+      { id: 100, comment: 'Comment', date: '', user: { id: 1, name: 'Reader' }, has_replies: true }], next_url: null }) });
+    assert.equal((await api.comments(51, 'illust')).items[0].hasReplies, true);
+    assert.match(requests.at(-1).url, /v3\/illust\/comments\?illust_id=51/);
+    await api.comments(51, 'novel', 100);
+    assert.match(requests.at(-1).url, /v2\/novel\/comment\/replies\?comment_id=100/);
+    requests.length = 0;
+    await assert.rejects(() => api.comments(51, 'illust', 0, 'https://evil.test/steal'));
+    await assert.rejects(() => api.novels('discover', '', '', 'https://app-api.pixiv.net.evil.test/v1/novel'));
+    assert.equal(requests.length, 0);
+    assert.equal(mapper.isApiUrl('https://app-api.pixiv.net/v3/novel/comments?novel_id=51'), true);
+    assert.equal(mapper.isNovelWebviewUrl('https://app-api.pixiv.net/webview/v2/novel?id=51&viewer_version=20221031_ai'), true);
+    assert.equal(mapper.isNovelWebviewUrl('https://app-api.pixiv.net@evil.test/webview/v2/novel?id=51&viewer_version=20221031_ai'), false);
+    await auth.logout();
   });
 });

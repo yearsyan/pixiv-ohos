@@ -1,6 +1,6 @@
 # Pixiv 接口接入说明
 
-核对日期：2026-09-11。Android 参考版本：6.195.0（versionCode 68093）。安装包中已确认 App API 域名、客户端标识与下列接口路径。
+核对日期：2026-09-13。Android 参考版本：6.195.0（versionCode 68093）。安装包中已确认 App API 域名、客户端标识与下列 JSON 接口路径；小说正文补充参考开源客户端的 WebView 协议。
 
 ## 登录后的 App API
 
@@ -13,6 +13,12 @@
 | 排行榜 | GET `/v1/illust/ranking?filter=for_android&mode=day` |
 | 搜索 | GET `/v1/search/illust?filter=for_android&word=...&search_target=partial_match_for_tags&sort=date_desc` |
 | 作品详情 | GET `/v1/illust/detail?filter=for_android&illust_id=...` |
+| 小说推荐 / 榜单 | GET `/v1/novel/recommended` / `/v1/novel/ranking?mode=day` |
+| 小说搜索 | GET `/v1/search/novel?word=...&search_target=partial_match_for_tags&sort=date_desc` |
+| 小说详情 | GET `/v2/novel/detail?novel_id=...` |
+| 小说正文 | GET `/webview/v2/novel?id=...&viewer_version=20221031_ai` |
+| 作品评论 | GET `/v3/illust/comments?illust_id=...` / `/v3/novel/comments?novel_id=...` |
+| 评论回复 | GET `/v2/illust/comment/replies?comment_id=...` / `/v2/novel/comment/replies?comment_id=...` |
 | 画师详情 | GET `/v2/user/detail?filter=for_android&user_id=...` |
 | 画师作品 | GET `/v1/user/illusts?filter=for_android&user_id=...&type=illust` |
 | 热门标签 | GET `/v1/trending-tags/illust?filter=for_android` |
@@ -56,7 +62,21 @@
 | 画师资料 | `/ajax/user/{id}?full=1&lang=zh` |
 | 画师作品 ID | `/ajax/user/{id}/profile/all` |
 | 画师作品元数据 | `/ajax/user/{id}/profile/illusts?ids[]=...&work_category=illustManga&is_first_page=0&lang=zh` |
+| 小说榜单 | `/ajax/ranking/novel?mode=daily&content=novel&p=1&lang=zh` |
+| 小说搜索 | `/ajax/search/novels/{word}?word=...&order=date_d&mode=safe&p=1&s_mode=s_tag&lang=zh` |
+| 小说详情与正文 | `/ajax/novel/{id}?lang=zh` |
+| 插画 / 漫画评论 | `/ajax/illusts/comments/roots?illust_id=...&offset=0&limit=20&lang=zh` |
+| 小说评论 | `/ajax/novels/comments/roots?novel_id=...&offset=0&limit=20&lang=zh` |
+| 评论回复 | `/ajax/{illusts\|novels}/comments/replies?comment_id=...&page=1&lang=zh` |
 
 公开接口已执行只读请求验证。旧的 `/v1/illust/recommended-nologin` 在本次验证中返回端点不存在，因此游客首页明确展示「来自 Pixiv 公开排行榜」，没有把公开榜单冒充个性化推荐。
 
 图片只接受 `pximg.net` 域名，附带 `Referer: https://www.pixiv.net/`。不将登录令牌发送给图片 CDN。
+
+## 小说与评论
+
+游客小说精选使用公开日榜，小说榜单只提供日榜、周榜和新人榜。公开搜索依赖 `body.novel.lastPage` 判断分页，不假定每页条数。小说正文解析章节、换页、注音和插图；普通文本中的尖括号原样保留，长正文分块渲染。系列跳转仅使用服务端标记为可访问的相邻作品。沿用作品列表的受限内容过滤规则。
+
+App 正文接口返回 HTML，只提取 `novel: {...}` 内的 JSON 对象，不执行脚本。该路径有独立白名单，并复用一次 401 续期；不把任意 WebView URL 作为带令牌的请求目标。系列相邻项是 `seriesNavigation.prevNovel / nextNovel`，插图来自 `images` 和 `illusts`。协议字段参考 [PixivPy](https://github.com/upbit/pixivpy/blob/master/pixivpy3/aapi.py) 与 [PixEz 的正文模型](https://github.com/Notsfsssf/pixez-flutter/blob/master/lib/models/novel_web_response.dart)。
+
+公开根评论用 `offset / limit`，回复用从 1 开始的 `page`，均以 `hasNext` 判断后续页。某些回复会返回 `error: true, body: []`，此时保留重试并引导登录，不显示为「暂无回复」。表情贴图位于 `s.pximg.net/common/images/stamp/generated-stamps/{stampId}_s.jpg`。这些公开路径已实际只读验证；新增的 App 小说 / 评论接口和鉴权由合成数据测试覆盖，尚未用真实账号验证。评论功能不调用发表或删除接口。

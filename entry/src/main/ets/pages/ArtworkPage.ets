@@ -13,6 +13,7 @@ export struct ArtworkPage {
       ArtworkDetail({ initial: this.params.artwork, localCollection: this.params.localCollection, visible: this.visible,
         onViewer: (params: ViewerRouteParams) => this.navigator.openViewer(params),
         onBack: () => this.navigator.back(), onArtist: (work: Artwork) => this.navigator.openArtist(work),
+        onComments: (work: Artwork) => this.navigator.openComments({ id: work.id, kind: 'illust', title: work.title }),
         onTag: (tag: string) => this.navigator.showMain(1, tag),
         onChanged: (work: Artwork) => {
           if (!this.params.localCollection) { this.navigator.rememberArtwork(work); }

@@ -18,6 +18,7 @@ export struct ArtworkDetail {
   onBack: () => void = () => {};
   onArtist: (work: Artwork) => void = () => {};
   onTag: (tag: string) => void = () => {};
+  onComments: (work: Artwork) => void = () => {};
   onChanged: (work: Artwork) => void = () => {};
   onViewer: (params: ViewerRouteParams) => void = () => {};
   @State work: Artwork = emptyArtwork();
@@ -185,6 +186,8 @@ export struct ArtworkDetail {
             if (this.work.caption) {
               Text(this.work.caption).fontSize(14).fontColor(Theme.secondary).lineHeight(24).width('100%').copyOption(CopyOptions.LocalDevice)
             }
+            Button('查看评论和回复').width('100%').height(46).fontSize(14).fontColor(Theme.blue).backgroundColor(Theme.paleBlue)
+              .onClick(() => this.onComments(this.work)).id('detail_comments')
             Text(this.work.createDate.substring(0, 10) + '  ·  ID ' + this.work.id.toString())
               .fontSize(11).fontColor(Theme.muted).width('100%').margin({ bottom: 24 })
           }.width('100%').constraintSize({ maxWidth: 880 }).padding({ left: 20, right: 20, top: 8, bottom: 24 })

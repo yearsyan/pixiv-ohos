@@ -8,6 +8,7 @@ import { Theme } from '../utils/Theme';
 import { AppNavigator } from '../navigation/AppNavigator';
 import { ArtworkCard } from '../components/ArtworkCard';
 import { PixivImage } from '../components/PixivImage';
+import { NovelBrowser } from './NovelBrowser';
 
 @Component
 export struct BrowseContent {
@@ -44,6 +45,7 @@ export struct BrowseContent {
   @State userName: string = '';
   @State avatar: string = '';
   @State historyCount: number = 0;
+  @State novelReload: number = 0;
   private generation: number = 0;
   private saving: Set<number> = new Set<number>();
   private scroller: Scroller = new Scroller();
@@ -94,6 +96,10 @@ export struct BrowseContent {
 
   private hasFeed(): boolean {
     return this.tab !== 4 && !(this.tab === 1 && !this.searchTerm) && !(this.tab === 2 && !this.loggedIn);
+  }
+
+  private novelFeed(): boolean {
+    return (this.tab === 0 && this.contentType === 'novel') || (this.tab === 1 && this.searchType === 'novel');
   }
 
   private applyRouteRequest(): boolean {
@@ -152,6 +158,12 @@ export struct BrowseContent {
     this.moreError = '';
     this.next = '';
     this.items = [];
+    if (this.novelFeed()) {
+      this.novelReload++;
+      this.loading = false;
+      this.refreshing = false;
+      return;
+    }
     try {
       const response = await this.page('');
       if (generation !== this.generation) { return; }
@@ -289,6 +301,11 @@ export struct BrowseContent {
           .fontColor(this.contentType === 'manga' ? Theme.ink : Theme.secondary)
         Row().width(18).height(3).borderRadius(2).backgroundColor(this.contentType === 'manga' ? Theme.blue : Color.Transparent)
       }.onClick(() => { this.contentType = 'manga'; this.rankingMode = 'day'; this.reload(); }).id('type_manga')
+      Column({ space: 9 }) {
+        Text('小说').fontSize(16).fontWeight(this.contentType === 'novel' ? FontWeight.Bold : FontWeight.Normal)
+          .fontColor(this.contentType === 'novel' ? Theme.ink : Theme.secondary)
+        Row().width(18).height(3).borderRadius(2).backgroundColor(this.contentType === 'novel' ? Theme.blue : Color.Transparent)
+      }.onClick(() => { this.contentType = 'novel'; this.rankingMode = 'day'; this.reload(); }).id('type_novel')
       Blank()
       Row({ space: 3 }) {
         this.chip('精选', this.homeMode === 'discover', () => { this.homeMode = 'discover'; this.reload(); })
@@ -299,7 +316,9 @@ export struct BrowseContent {
       Row({ space: 8 }) {
         this.chip('日榜', this.rankingMode === 'day', () => { this.rankingMode = 'day'; this.reload(); })
         this.chip('周榜', this.rankingMode === 'week', () => { this.rankingMode = 'week'; this.reload(); })
-        this.chip('月榜', this.rankingMode === 'month', () => { this.rankingMode = 'month'; this.reload(); })
+        if (this.contentType !== 'novel') {
+          this.chip('月榜', this.rankingMode === 'month', () => { this.rankingMode = 'month'; this.reload(); })
+        }
         this.chip('新人', this.rankingMode === 'week_rookie', () => { this.rankingMode = 'week_rookie'; this.reload(); })
       }.width('100%').padding({ left: this.horizontalPadding(), right: this.horizontalPadding(), bottom: 15 })
     }
@@ -325,9 +344,10 @@ export struct BrowseContent {
     }.width('100%').padding({ left: this.horizontalPadding(), right: this.horizontalPadding(), bottom: 18 })
     if (this.searchTerm) {
       Row({ space: 8 }) {
-        this.chip('全部', this.searchType === 'all', () => { this.searchType = 'all'; this.reload(); })
+        this.chip('绘画', this.searchType === 'all', () => { this.searchType = 'all'; this.reload(); })
         this.chip('插画', this.searchType === 'illust', () => { this.searchType = 'illust'; this.reload(); })
         this.chip('漫画', this.searchType === 'manga', () => { this.searchType = 'manga'; this.reload(); })
+        this.chip('小说', this.searchType === 'novel', () => { this.searchType = 'novel'; this.reload(); })
         Blank()
         Button(this.searchSort === 'date_desc' ? '最新 ↓' : '最早 ↑').height(34).fontSize(11)
           .fontColor(Theme.secondary).backgroundColor(Color.Transparent)
@@ -566,6 +586,9 @@ export struct BrowseContent {
             else if (this.tab === 1 && !this.searchTerm) { this.searchLanding() }
             else if (this.tab === 2 && !this.loggedIn) {
               this.emptyState($r('app.media.spark'), '与喜欢的画师保持相遇', '登录 Pixiv，关注画师的新作品会出现在这里。', '登录 Pixiv', () => this.navigator.openLogin())
+            } else if (this.novelFeed()) {
+              NovelBrowser({ navigator: this.navigator, mode: this.homeMode === 'ranking' ? this.rankingMode : 'discover',
+                word: this.tab === 1 ? this.searchTerm : '', sort: this.searchSort, reloadToken: this.novelReload })
             } else { this.artworkGrid() }
           }.width('100%').height(Math.max(1, this.scrollViewportHeight - this.toolbarHeight)).id('page_body')
         }.width('100%')

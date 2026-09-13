@@ -16,6 +16,9 @@ import { ArtistPage } from './ArtistPage';
 import { LoginPage } from './LoginPage';
 import { AboutPage } from './AboutPage';
 import { ViewerPage } from './ViewerPage';
+import { Novel, CommentTarget } from '../models/ReadingModels';
+import { NovelPage } from './NovelPage';
+import { CommentsPage } from './CommentsPage';
 
 @Entry
 @Component
@@ -49,6 +52,8 @@ struct Index {
     else if (name === Routes.artist) { ArtistPage({ navigator: this.navigator, source: param as Artwork }) }
     else if (name === Routes.login) { LoginPage({ navigator: this.navigator }) }
     else if (name === Routes.about) { AboutPage({ navigator: this.navigator }) }
+    else if (name === Routes.novel) { NovelPage({ navigator: this.navigator, source: param as Novel }) }
+    else if (name === Routes.comments) { CommentsPage({ navigator: this.navigator, target: param as CommentTarget }) }
   }
 
   build() {
