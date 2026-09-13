@@ -17,6 +17,9 @@
 | 小说搜索 | GET `/v1/search/novel?word=...&search_target=partial_match_for_tags&sort=date_desc` |
 | 小说详情 | GET `/v2/novel/detail?novel_id=...` |
 | 小说正文 | GET `/webview/v2/novel?id=...&viewer_version=20221031_ai` |
+| 插画 / 漫画相关推荐 | GET `/v2/illust/related?filter=for_android&illust_id=...` |
+| 小说相关推荐 | GET `/v1/novel/related?novel_id=...` |
+| 小说系列章节 | GET `/v2/novel/series?filter=for_android&series_id=...` |
 | 作品评论 | GET `/v3/illust/comments?illust_id=...` / `/v3/novel/comments?novel_id=...` |
 | 评论回复 | GET `/v2/illust/comment/replies?comment_id=...` / `/v2/novel/comment/replies?comment_id=...` |
 | 画师详情 | GET `/v2/user/detail?filter=for_android&user_id=...` |
@@ -65,6 +68,10 @@
 | 小说榜单 | `/ajax/ranking/novel?mode=daily&content=novel&p=1&lang=zh` |
 | 小说搜索 | `/ajax/search/novels/{word}?word=...&order=date_d&mode=safe&p=1&s_mode=s_tag&lang=zh` |
 | 小说详情与正文 | `/ajax/novel/{id}?lang=zh` |
+| 相关推荐首批 | `/ajax/{illust\|novel}/{id}/recommend/init?limit=6&lang=zh` |
+| 更多插画 / 漫画推荐 | `/ajax/illust/recommend/illusts?illust_ids[]=...&lang=zh` |
+| 更多小说推荐 | `/ajax/novel/recommend/novels?novelIds[]=...&lang=zh` |
+| 小说系列目录 | `/ajax/novel/series/{id}/content_titles?lang=zh` |
 | 插画 / 漫画评论 | `/ajax/illusts/comments/roots?illust_id=...&offset=0&limit=20&lang=zh` |
 | 小说评论 | `/ajax/novels/comments/roots?novel_id=...&offset=0&limit=20&lang=zh` |
 | 评论回复 | `/ajax/{illusts\|novels}/comments/replies?comment_id=...&page=1&lang=zh` |
@@ -80,3 +87,7 @@
 App 正文接口返回 HTML，只提取 `novel: {...}` 内的 JSON 对象，不执行脚本。该路径有独立白名单，并复用一次 401 续期；不把任意 WebView URL 作为带令牌的请求目标。系列相邻项是 `seriesNavigation.prevNovel / nextNovel`，插图来自 `images` 和 `illusts`。协议字段参考 [PixivPy](https://github.com/upbit/pixivpy/blob/master/pixivpy3/aapi.py) 与 [PixEz 的正文模型](https://github.com/Notsfsssf/pixez-flutter/blob/master/lib/models/novel_web_response.dart)。
 
 公开根评论用 `offset / limit`，回复用从 1 开始的 `page`，均以 `hasNext` 判断后续页。某些回复会返回 `error: true, body: []`，此时保留重试并引导登录，不显示为「暂无回复」。表情贴图位于 `s.pximg.net/common/images/stamp/generated-stamps/{stampId}_s.jpg`。这些公开路径已实际只读验证；新增的 App 小说 / 评论接口和鉴权由合成数据测试覆盖，尚未用真实账号验证。评论功能不调用发表或删除接口。
+
+相关推荐首批返回 `illusts / novels` 和 `nextIds`。后续请求每次从剩余 ID 中取 6 个，后续响应不含 `nextIds`，因此由客户端保留余下 ID；不在每次加载更多时重新请求首批。推荐过滤当前作品、重复项和受限内容。游客游标只允许正整数 ID，App 游标继续使用精确主机白名单。
+
+系列 ID 从小说详情的 `series.id`（App）或 `seriesNavData.seriesId`（Web）取得。公开目录响应为按系列顺序排列的 `{id, title, available}` 数组，实测不含 `order`；保持服务器顺序，不能按作品 ID 排序。App 目录使用 `novels` 和原始 `next_url` 分页，核对了 [PixEz 系列模型](https://github.com/Notsfsssf/pixez-flutter/blob/master/lib/models/novel_series_detail.dart)。公开目录一次获取，界面分批展示长目录；不可访问的章节显示提示并禁用跳转。本篇目录按阅读器分页生成，可跳转到对应页面。推荐与目录的新增界面已编译验证，尚待真机复查。

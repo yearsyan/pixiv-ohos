@@ -1,6 +1,7 @@
 import { Artwork, emptyArtwork } from '../models/PixivModels';
 import { AppNavigator, ArtworkRouteParams, ViewerRouteParams } from '../navigation/AppNavigator';
 import { ArtworkDetail } from '../components/ArtworkDetail';
+import { authService } from '../services/AuthService';
 
 @Component
 export struct ArtworkPage {
@@ -14,6 +15,7 @@ export struct ArtworkPage {
         onViewer: (params: ViewerRouteParams) => this.navigator.openViewer(params),
         onBack: () => this.navigator.back(), onArtist: (work: Artwork) => this.navigator.openArtist(work),
         onComments: (work: Artwork) => this.navigator.openComments({ id: work.id, kind: 'illust', title: work.title }),
+        onRelated: (work: Artwork) => this.navigator.openArtwork(work, !authService.loggedIn),
         onTag: (tag: string) => this.navigator.showMain(1, tag),
         onChanged: (work: Artwork) => {
           if (!this.params.localCollection) { this.navigator.rememberArtwork(work); }

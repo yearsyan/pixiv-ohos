@@ -9,6 +9,7 @@ import { compactCount } from '../utils/PixivMapper';
 import { Theme } from '../utils/Theme';
 import { PixivImage } from './PixivImage';
 import { DetailImage } from './DetailImage';
+import { RelatedWorks } from './RelatedWorks';
 
 @Component
 export struct ArtworkDetail {
@@ -19,6 +20,7 @@ export struct ArtworkDetail {
   onArtist: (work: Artwork) => void = () => {};
   onTag: (tag: string) => void = () => {};
   onComments: (work: Artwork) => void = () => {};
+  onRelated: (work: Artwork) => void = () => {};
   onChanged: (work: Artwork) => void = () => {};
   onViewer: (params: ViewerRouteParams) => void = () => {};
   @State work: Artwork = emptyArtwork();
@@ -190,6 +192,7 @@ export struct ArtworkDetail {
               .onClick(() => this.onComments(this.work)).id('detail_comments')
             Text(this.work.createDate.substring(0, 10) + '  ·  ID ' + this.work.id.toString())
               .fontSize(11).fontColor(Theme.muted).width('100%').margin({ bottom: 24 })
+            RelatedWorks({ sourceId: this.work.id, onArtwork: this.onRelated })
           }.width('100%').constraintSize({ maxWidth: 880 }).padding({ left: 20, right: 20, top: 8, bottom: 24 })
         }.width('100%').layoutWeight(1).id('detail_scroll')
       }.width('100%').height('100%').backgroundColor(Color.White)

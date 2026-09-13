@@ -4,9 +4,10 @@ import { Artwork, ArtworkPage, Artist, ImagePage, AppIllustResponse, AppDetailRe
   WebPagesResponse, WebArtistResponse, WebUserIdsResponse, WebUserWorksResponse } from '../models/PixivModels';
 import { fromApp, fromRanking, fromSearch, fromWebDetail, uniqueArtworks, isApiUrl, isNovelWebviewUrl, plainText } from '../utils/PixivMapper';
 import { NovelList, NovelContent, CommentPage, AppNovelsResponse, AppNovelResponse, WebNovelRanking,
-  WebNovelSearch, WebNovelResponse, AppCommentsResponse, WebCommentsResponse } from '../models/ReadingModels';
+  WebNovelSearch, WebNovelResponse, AppCommentsResponse, WebCommentsResponse, NovelChapterList,
+  NovelChapter, WebNovelChapters, WebRelatedResponse, WebRelatedPage } from '../models/ReadingModels';
 import { appNovel, rankedNovel, webNovel, detailedNovel, uniqueNovels, appComment, webComment,
-  uniqueComments, parseNovelWebview, novelImages } from '../utils/ReadingMapper';
+  uniqueComments, parseNovelWebview, novelImages, relatedIds, relatedCursor, uniqueChapters } from '../utils/ReadingMapper';
 import { authService } from './AuthService';
 import { requestJson, requestText, parseJson, appHeaders, formEncode, WEB_HEADERS, PixivError } from './HttpClient';
 
@@ -69,6 +70,61 @@ class PixivApi {
   }
 
   private novelRankMode(mode: string): string { return mode === 'week' || mode === 'week_rookie' ? mode : 'day'; }
+
+  private contentId(id: number): void {
+    if (!Number.isSafeInteger(id) || id <= 0) { throw new PixivError('无效的作品 ID。'); }
+  }
+
+  private async webRelated(id: number, kind: string, cursor: string): Promise<WebRelatedPage> {
+    const ids = cursor ? relatedCursor(cursor, id) : [];
+    if (cursor && ids.length === 0) { return { body: { illusts: [], novels: [] }, next: '' }; }
+    const key = kind === 'illust' ? 'illust_ids' : 'novelIds';
+    const path = cursor ? '/ajax/' + kind + '/recommend/' + (kind === 'illust' ? 'illusts' : 'novels') + '?' +
+      ids.slice(0, 6).map(value => key + '%5B%5D=' + value.toString()).join('&') :
+      '/ajax/' + kind + '/' + id.toString() + '/recommend/init?limit=6';
+    const response = await requestJson<WebRelatedResponse>(WEB + path + '&lang=zh', WEB_HEADERS);
+    if (response.error || !response.body) { throw new PixivError('暂时无法读取推荐作品。'); }
+    return { body: response.body, next: (cursor ? ids.slice(6) : relatedIds(response.body.nextIds || [], id)).join(',') };
+  }
+
+  async relatedArtworks(id: number, cursor: string = ''): Promise<ArtworkPage> {
+    this.contentId(id);
+    if (authService.loggedIn) {
+      const page = await this.appPage(cursor || '/v2/illust/related?filter=for_android&illust_id=' + id.toString());
+      page.items = page.items.filter(work => work.id !== id);
+      return page;
+    }
+    const page = await this.webRelated(id, 'illust', cursor);
+    if (!Array.isArray(page.body.illusts)) { throw new PixivError('暂时无法读取推荐作品。'); }
+    return { items: uniqueArtworks(page.body.illusts.map(fromSearch)).filter(work => work.id !== id), next: page.next, date: '', total: 0 };
+  }
+
+  async relatedNovels(id: number, cursor: string = ''): Promise<NovelList> {
+    this.contentId(id);
+    if (authService.loggedIn) {
+      const response = await this.app<AppNovelsResponse>(cursor || '/v1/novel/related?novel_id=' + id.toString());
+      if (!Array.isArray(response.novels)) { throw new PixivError('暂时无法读取推荐小说。'); }
+      return { items: uniqueNovels(response.novels.map(appNovel)).filter(novel => novel.id !== id), next: response.next_url || '' };
+    }
+    const page = await this.webRelated(id, 'novel', cursor);
+    if (!Array.isArray(page.body.novels)) { throw new PixivError('暂时无法读取推荐小说。'); }
+    return { items: uniqueNovels(page.body.novels.map(webNovel)).filter(novel => novel.id !== id), next: page.next };
+  }
+
+  async novelChapters(seriesId: number, cursor: string = ''): Promise<NovelChapterList> {
+    this.contentId(seriesId);
+    if (authService.loggedIn) {
+      const response = await this.app<AppNovelsResponse>(cursor || '/v2/novel/series?filter=for_android&series_id=' + seriesId.toString());
+      if (!Array.isArray(response.novels)) { throw new PixivError('暂时无法读取系列目录。'); }
+      return { items: uniqueChapters(response.novels.map(novel => ({ id: novel.id, title: novel.title || '未命名章节',
+        available: novel.visible !== false && !(novel.x_restrict > 0) } as NovelChapter))), next: response.next_url || '' };
+    }
+    if (cursor) { throw new PixivError('无效的目录分页。'); }
+    const response = await requestJson<WebNovelChapters>(WEB + '/ajax/novel/series/' + seriesId.toString() + '/content_titles?lang=zh', WEB_HEADERS);
+    if (response.error || !Array.isArray(response.body)) { throw new PixivError('暂时无法读取系列目录，请登录后重试。'); }
+    return { items: uniqueChapters(response.body.map(novel => ({ id: Number(novel.id), title: novel.title || '未命名章节',
+      available: novel.available === true } as NovelChapter))), next: '' };
+  }
 
   private pageNumber(cursor: string, first: number): number {
     const value = cursor ? Number(cursor) : first;

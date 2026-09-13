@@ -1,4 +1,4 @@
-import { AppImageUrls, AppUser, AppTag, WebTags } from './PixivModels';
+import { AppImageUrls, AppUser, AppTag, WebTags, WebWork } from './PixivModels';
 
 export interface Novel {
   id: number;
@@ -13,6 +13,7 @@ export interface Novel {
   createDate: string;
   restricted: boolean;
   seriesTitle: string;
+  seriesId: number;
   rank: number;
 }
 
@@ -20,6 +21,13 @@ export interface NovelList { items: Novel[]; next: string; }
 export interface NovelContent { novel: Novel; text: string; previousId: number; nextId: number; images: Record<string, string>; }
 export interface ReaderBlock { kind: string; text: string; imageUrl?: string; }
 export interface ReaderPage { blocks: ReaderBlock[]; }
+export interface NovelChapter { id: number; title: string; available: boolean; }
+export interface NovelChapterList { items: NovelChapter[]; next: string; }
+export interface WebNovelChapter { id: string; title: string; available: boolean; }
+export interface WebNovelChapters { error: boolean; body: WebNovelChapter[]; }
+export interface WebRelatedBody { illusts?: WebWork[]; novels?: WebNovel[]; nextIds?: (string | number)[]; }
+export interface WebRelatedResponse { error: boolean; body: WebRelatedBody; }
+export interface WebRelatedPage { body: WebRelatedBody; next: string; }
 
 export interface WorkComment {
   id: number;
@@ -52,7 +60,7 @@ export interface AppNovelSeries { id?: number; title?: string; }
 export interface AppNovelsResponse { novels: AppNovel[]; next_url?: string; }
 export interface AppNovelResponse { novel: AppNovel; }
 export interface NovelNeighbor { id: string | number; available?: boolean; viewable?: boolean; }
-export interface NovelNavigation { title?: string; prev?: NovelNeighbor; next?: NovelNeighbor; }
+export interface NovelNavigation { seriesId?: number; title?: string; prev?: NovelNeighbor; next?: NovelNeighbor; }
 export interface AppNovelNavigation { prevNovel?: NovelNeighbor; nextNovel?: NovelNeighbor; }
 export interface NovelEmbeddedUrls { original?: string; }
 export interface NovelEmbeddedImage { urls: NovelEmbeddedUrls; }
@@ -80,6 +88,7 @@ export interface WebNovel {
   xRestrict: number;
   isMasked?: boolean;
   seriesTitle?: string;
+  seriesId?: string;
 }
 export interface WebNovelSearch { error: boolean; body: WebNovelSearchBody; }
 export interface WebNovelSearchBody { novel: WebNovelSearchGroup; }
@@ -97,6 +106,7 @@ export interface WebNovelRank {
   create_date: string;
   x_restrict: string;
   series_title?: string;
+  series_id?: number;
   rank: number;
 }
 export interface WebNovelRanking { error: boolean; body: WebNovelRankingBody; }
@@ -148,5 +158,5 @@ export interface WebCommentsBody { comments: WebComment[]; hasNext: boolean; }
 
 export function emptyNovel(): Novel {
   return { id: 0, title: '', cover: '', userId: 0, userName: '', caption: '', tags: [], textCount: 0,
-    bookmarkCount: 0, createDate: '', restricted: false, seriesTitle: '', rank: 0 };
+    bookmarkCount: 0, createDate: '', restricted: false, seriesTitle: '', seriesId: 0, rank: 0 };
 }

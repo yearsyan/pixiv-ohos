@@ -277,12 +277,13 @@ test('Pixiv protocol and local state', async t => {
   });
   await t.test('guest novel content returns only accessible series neighbors', async () => {
     const body = { id: '51', title: 'Synthetic novel', userId: '1', userName: 'Author', description: '', xRestrict: 0,
-      tags: { tags: [] }, content: 'Chapter one[newpage]Chapter two', seriesNavData: {
+      tags: { tags: [] }, content: 'Chapter one[newpage]Chapter two', seriesNavData: { seriesId: 7,
         title: 'Series', prev: { id: '50', available: true }, next: { id: '52', available: false } } };
     handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: false, body }) });
     const result = await api.novelContent(51);
     assert.equal(result.previousId, 50); assert.equal(result.nextId, 0);
     assert.equal(result.novel.seriesTitle, 'Series');
+    assert.equal(result.novel.seriesId, 7);
     body.xRestrict = 1;
     await assert.rejects(() => api.novelContent(51), /当前浏览模式/);
     body.xRestrict = 0; delete body.content;
@@ -311,7 +312,7 @@ test('Pixiv protocol and local state', async t => {
     await auth.loginWithRefreshToken('synthetic-refresh-token');
     let webviewCalls = 0;
     const novel = { id: 51, title: 'Synthetic', caption: '', user: { id: 1, name: 'Author' }, tags: [], x_restrict: 0,
-      text_length: 12, image_urls: {} };
+      text_length: 12, image_urls: {}, series: { id: 7, title: 'Series' } };
     handler = async url => {
       if (url.includes('auth/token')) return tokenResponse();
       if (url.includes('/v2/novel/detail')) return { responseCode: 200, result: JSON.stringify({ novel }) };
@@ -323,6 +324,7 @@ test('Pixiv protocol and local state', async t => {
     const result = await api.novelContent(51);
     assert.equal(webviewCalls, 2); assert.equal(result.text, 'Novel text');
     assert.equal(result.previousId, 50); assert.equal(result.nextId, 0);
+    assert.equal(result.novel.seriesId, 7);
     assert.match(requests.at(-1).url, /webview\/v2\/novel\?id=51&viewer_version=20221031_ai$/);
     assert.equal(requests.at(-1).options.header.Authorization, 'Bearer synthetic-access');
   });
@@ -340,6 +342,79 @@ test('Pixiv protocol and local state', async t => {
     assert.equal(mapper.isApiUrl('https://app-api.pixiv.net/v3/novel/comments?novel_id=51'), true);
     assert.equal(mapper.isNovelWebviewUrl('https://app-api.pixiv.net/webview/v2/novel?id=51&viewer_version=20221031_ai'), true);
     assert.equal(mapper.isNovelWebviewUrl('https://app-api.pixiv.net@evil.test/webview/v2/novel?id=51&viewer_version=20221031_ai'), false);
+    await auth.logout();
+  });
+  await t.test('public related artwork pagination consumes the remaining IDs without trusting URLs', async () => {
+    const item = id => ({ id: String(id), title: 'Synthetic', xRestrict: 0, userId: '1', userName: 'Author', url: 'https://i.pximg.net/example.jpg' });
+    handler = async url => ({ responseCode: 200, result: JSON.stringify({ error: false, body: url.includes('/recommend/init') ? {
+      illusts: [item(1), item(2), item(2), { ...item(3), xRestrict: 1 }],
+      nextIds: ['1', '4', '4', '5', '6', '7', '8', '9', '10', 'bad', 0]
+    } : { illusts: [item(4), item(5)] } }) });
+    const first = await api.relatedArtworks(1);
+    assert.deepEqual(first.items.map(work => work.id), [2]);
+    assert.equal(first.next, '4,5,6,7,8,9,10');
+    const second = await api.relatedArtworks(1, first.next);
+    assert.equal(second.next, '10');
+    const query = new URL(requests.at(-1).url).searchParams;
+    assert.deepEqual(query.getAll('illust_ids[]'), ['4', '5', '6', '7', '8', '9']);
+    assert.equal(requests.at(-1).options.header.Authorization, undefined);
+    assert.equal((await api.relatedArtworks(1, second.next)).next, '');
+    const before = requests.length;
+    for (const cursor of ['https://evil.test/', '1,-2', '3&token=1', '9007199254740992', '0', '1, 2']) {
+      await assert.rejects(() => api.relatedArtworks(1, cursor), /推荐分页/);
+    }
+    await assert.rejects(() => api.relatedArtworks(0), /作品 ID/);
+    assert.equal(requests.length, before);
+  });
+  await t.test('novel recommendations keep pagination when the first batch is hidden', async () => {
+    handler = async url => ({ responseCode: 200, result: JSON.stringify({ error: false, body: url.includes('/recommend/init') ? {
+      novels: [{ id: '10', xRestrict: 0 }, { id: '20', xRestrict: 1 }], nextIds: ['30']
+    } : { novels: [{ id: '30', title: 'Next novel', xRestrict: 0, userName: 'Author' }] } }) });
+    const first = await api.relatedNovels(10);
+    assert.equal(first.items.length, 0); assert.equal(first.next, '30');
+    const more = await api.relatedNovels(10, first.next);
+    assert.equal(more.items[0].id, 30); assert.equal(more.next, '');
+    assert.match(requests.at(-1).url, /novel\/recommend\/novels\?novelIds%5B%5D=30/);
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: false, body: {} }) });
+    await assert.rejects(() => api.relatedNovels(10), /推荐小说/);
+  });
+  await t.test('public series directory preserves server order and unavailable chapters', async () => {
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: false, body: [
+      { id: '30', title: 'First', available: true }, { id: '20', title: 'Second', available: false },
+      { id: '30', title: 'Duplicate', available: true }, { id: '10', title: 'Third' }, { id: '0', title: 'Invalid' }
+    ] }) });
+    const page = await api.novelChapters(7);
+    assert.deepEqual(page.items.map(chapter => chapter.id), [30, 20, 10]);
+    assert.deepEqual(page.items.map(chapter => chapter.available), [true, false, false]);
+    assert.equal(page.next, '');
+    assert.match(requests.at(-1).url, /novel\/series\/7\/content_titles\?lang=zh/);
+    assert.equal(requests.at(-1).options.header.Authorization, undefined);
+    await assert.rejects(() => api.novelChapters(7, 'https://evil.test/'), /目录分页/);
+    handler = async () => ({ responseCode: 200, result: JSON.stringify({ error: true, body: [] }) });
+    await assert.rejects(() => api.novelChapters(7), /目录/);
+  });
+  await t.test('App recommendations and series directory use authenticated endpoints and guarded cursors', async () => {
+    handler = async () => tokenResponse();
+    await auth.loginWithRefreshToken('synthetic-refresh-token');
+    const appWork = id => ({ id, title: 'Synthetic', user: { id: 1, name: 'Author' }, image_urls: { large: 'https://i.pximg.net/example.jpg' }, x_restrict: 0 });
+    handler = async url => ({ responseCode: 200, result: JSON.stringify(url.includes('/illust/') ? {
+      illusts: [appWork(1), appWork(2)], next_url: null
+    } : { novels: [appWork(1), { ...appWork(2), visible: false }, { ...appWork(3), x_restrict: 1 }],
+      next_url: 'https://app-api.pixiv.net/v2/novel/series?series_id=7&last_order=3' }) });
+    assert.deepEqual((await api.relatedArtworks(1)).items.map(work => work.id), [2]);
+    assert.match(requests.at(-1).url, /v2\/illust\/related\?filter=for_android&illust_id=1/);
+    assert.equal((await api.relatedNovels(1)).items.length, 0);
+    assert.match(requests.at(-1).url, /v1\/novel\/related\?novel_id=1/);
+    const series = await api.novelChapters(7);
+    assert.deepEqual(series.items.map(chapter => chapter.available), [true, false, false]);
+    await api.novelChapters(7, series.next);
+    assert.equal(requests.at(-1).url, series.next);
+    assert.equal(requests.at(-1).options.header.Authorization, 'Bearer synthetic-access');
+    const before = requests.length;
+    await assert.rejects(() => api.novelChapters(7, 'https://evil.test/v2/novel/series'));
+    await assert.rejects(() => api.relatedArtworks(1, 'https://evil.test/v2/illust/related'));
+    await assert.rejects(() => api.relatedNovels(1, 'https://evil.test/v1/novel/related'));
+    assert.equal(requests.length, before);
     await auth.logout();
   });
 });

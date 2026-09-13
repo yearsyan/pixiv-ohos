@@ -53,11 +53,41 @@ def reading_checks(illust_id):
   assert response.headers.get('Content-Type','').startswith('image/')
  print('PASS comment stamp URL (HEAD only)')
 
+def related_checks(illust_id):
+ ranking=get('/ajax/ranking/novel?mode=daily&content=novel&p=1&lang=zh')['body']['display_a']['rank_a']
+ novel=next(n for n in ranking if not int(n.get('x_restrict',0)) and not n.get('mask_reason'))
+ for kind,id in [('illust',illust_id),('novel',novel['id'])]:
+  body=get('/ajax/'+kind+'/'+str(id)+'/recommend/init?limit=6&lang=zh')['body']
+  group='illusts' if kind=='illust' else 'novels'
+  assert isinstance(body[group],list) and isinstance(body['nextIds'],list)
+  print('PASS',kind,'recommendations:',len(body[group]),'initial items')
+  ids=body['nextIds'][:6]
+  if ids:
+   key='illust_ids[]' if kind=='illust' else 'novelIds[]'
+   query=urllib.parse.urlencode([(key,id) for id in ids])
+   more=get('/ajax/'+kind+'/recommend/'+group+'?'+query+'&lang=zh')['body']
+   assert isinstance(more[group],list)
+   assert all(str(item['id']) in [str(id) for id in ids] for item in more[group])
+   print('PASS',kind,'recommendation continuation:',len(more[group]),'items')
+ series=next((n for n in ranking if n.get('series_id') and not int(n.get('x_restrict',0)) and not n.get('mask_reason')),None)
+ if series:
+  detail=get('/ajax/novel/'+str(series['id'])+'?lang=zh')['body']
+  id=detail['seriesNavData']['seriesId']
+  chapters=get('/ajax/novel/series/'+str(id)+'/content_titles?lang=zh')['body']
+  assert isinstance(chapters,list) and chapters
+  assert any(str(chapter['id'])==str(series['id']) for chapter in chapters)
+  assert all(isinstance(chapter['available'],bool) for chapter in chapters)
+  print('PASS series directory:',len(chapters),'chapters including the current novel')
+ else:print('SKIP series: no public series in today\'s ranking')
+
 def main():
  ranking=get('/ranking.php?format=json&mode=daily&content=illust&p=1')
  items=ranking['contents'];assert items and isinstance(items[0]['illust_id'],int)
  safe=next(x for x in items if not x.get('is_masked') and not x.get('illust_content_type',{}).get('sexual'))
  print('PASS daily ranking:',len(items),'items; next page:',ranking['next'])
+ if '--related-only' in sys.argv:
+  related_checks(safe['illust_id'])
+  return
  if '--reading-only' in sys.argv:
   reading_checks(safe['illust_id'])
   return
@@ -86,4 +116,5 @@ def main():
  assert len(works['body']['works'])>0
  print('PASS artist works; all public read-only checks passed')
  reading_checks(safe['illust_id'])
+ related_checks(safe['illust_id'])
 if __name__=='__main__':main()

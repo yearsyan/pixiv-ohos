@@ -1,5 +1,5 @@
 import { Novel, AppNovel, WebNovel, WebNovelRank, WebNovelDetail, WorkComment,
-  AppComment, WebComment, AppNovelText, ReaderBlock, ReaderPage, NovelEmbeddedImage, NovelEmbeddedIllust } from '../models/ReadingModels';
+  AppComment, WebComment, AppNovelText, ReaderBlock, ReaderPage, NovelEmbeddedImage, NovelEmbeddedIllust, NovelChapter } from '../models/ReadingModels';
 import { plainText, isImageUrl } from './PixivMapper';
 import { PixivError } from '../services/HttpClient';
 
@@ -7,28 +7,54 @@ export function appNovel(item: AppNovel): Novel {
   return { id: item.id, title: item.title, cover: item.image_urls?.large || item.image_urls?.medium || '',
     userId: item.user.id, userName: item.user.name, caption: plainText(item.caption), tags: (item.tags || []).map(tag => tag.name),
     textCount: item.text_length || 0, bookmarkCount: item.total_bookmarks || 0, createDate: item.create_date || '',
-    restricted: item.x_restrict > 0 || item.visible === false, seriesTitle: item.series?.title || '', rank: 0 };
+    restricted: item.x_restrict > 0 || item.visible === false, seriesTitle: item.series?.title || '', seriesId: Number(item.series?.id) || 0, rank: 0 };
 }
 
 export function webNovel(item: WebNovel): Novel {
   return { id: Number(item.id), title: item.title, cover: item.url || '', userId: Number(item.userId), userName: item.userName,
     caption: plainText(item.description || ''), tags: item.tags || [], textCount: item.textCount || 0,
     bookmarkCount: item.bookmarkCount || 0, createDate: item.createDate || '',
-    restricted: item.xRestrict > 0 || item.isMasked === true, seriesTitle: item.seriesTitle || '', rank: 0 };
+    restricted: item.xRestrict > 0 || item.isMasked === true, seriesTitle: item.seriesTitle || '', seriesId: Number(item.seriesId) || 0, rank: 0 };
 }
 
 export function rankedNovel(item: WebNovelRank): Novel {
   return { id: Number(item.id), title: item.title, cover: item.url || '', userId: Number(item.user_id), userName: item.user_name,
     caption: plainText(item.comment || ''), tags: item.tag_a || [], textCount: Number(item.character_count) || 0,
     bookmarkCount: item.bookmark_count || 0, createDate: item.create_date || '',
-    restricted: Number(item.x_restrict) > 0, seriesTitle: item.series_title || '', rank: item.rank || 0 };
+    restricted: Number(item.x_restrict) > 0, seriesTitle: item.series_title || '', seriesId: Number(item.series_id) || 0, rank: item.rank || 0 };
 }
 
 export function detailedNovel(item: WebNovelDetail): Novel {
   return { id: Number(item.id), title: item.title, cover: item.coverUrl || '', userId: Number(item.userId), userName: item.userName,
     caption: plainText(item.description), tags: (item.tags?.tags || []).map(tag => tag.tag),
     textCount: item.characterCount || item.content?.length || 0, bookmarkCount: item.bookmarkCount || 0,
-    createDate: item.createDate || '', restricted: item.xRestrict > 0, seriesTitle: item.seriesNavData?.title || '', rank: 0 };
+    createDate: item.createDate || '', restricted: item.xRestrict > 0, seriesTitle: item.seriesNavData?.title || '',
+    seriesId: Number(item.seriesNavData?.seriesId) || 0, rank: 0 };
+}
+
+export function relatedIds(values: (string | number)[], sourceId: number): number[] {
+  const seen: Set<number> = new Set<number>();
+  return values.map(value => Number(value)).filter((id: number) => {
+    if (!Number.isSafeInteger(id) || id <= 0 || id === sourceId || seen.has(id)) { return false; }
+    seen.add(id); return true;
+  });
+}
+
+export function relatedCursor(cursor: string, sourceId: number): number[] {
+  if (!/^\d+(,\d+)*$/.test(cursor)) { throw new PixivError('无效的推荐分页。'); }
+  const parts = cursor.split(',');
+  if (parts.some(value => !Number.isSafeInteger(Number(value)) || Number(value) <= 0)) {
+    throw new PixivError('无效的推荐分页。');
+  }
+  return relatedIds(parts, sourceId);
+}
+
+export function uniqueChapters(items: NovelChapter[]): NovelChapter[] {
+  const seen: Set<number> = new Set<number>();
+  return items.filter((item: NovelChapter) => {
+    if (!Number.isSafeInteger(item.id) || item.id <= 0 || seen.has(item.id)) { return false; }
+    seen.add(item.id); return true;
+  });
 }
 
 export function uniqueNovels(items: Novel[]): Novel[] {
